@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>키오스크 장단점 비교 글쓰기 도우미</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <!-- NanumGothic Font for jsPDF -->
+    <script src="https://unpkg.com/jspdf-autotable@3.5.13/dist/jspdf.plugin.autotable.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/yan-s/Leflet.Korean-master/dist/L.Korean-src.js"></script>
+    <script type="text/javascript" src="https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2107@1.1/Pretendard-Regular.woff"></script>
+    <style>
+        body {
+            font-family: 'Noto Sans KR', sans-serif;
+        }
+        .step-card {
+            transition: all 0.5s ease-in-out;
+        }
+        .hidden-step {
+            opacity: 0;
+            transform: translateY(20px);
+            max-height: 0;
+            overflow: hidden;
+            pointer-events: none;
+        }
+        .visible-step {
+            opacity: 1;
+            transform: translateY(0);
+            max-height: 2000px; /* Adjust as needed */
+        }
+        /* --- Print (인쇄용) 스타일: PDF 내보내기 시 선택/검색 가능 텍스트 유지 --- */
+        @media print {
+            body { background: white !important; }
+            header, #alertModal, #downloadPdf, #printPdf { display: none !important; }
+            #step1, #step2 { display: none !important; }
+            #step3 { display: block !important; opacity: 1 !important; transform: none !important; max-height: none !important; }
+            #pdf-content { box-shadow: none !important; background: white !important; }
+        }
+    </style>
+</head>
+<body class="bg-blue-50 min-h-screen flex items-center justify-center p-4">
+    <div class="w-full max-w-3xl mx-auto">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl md:text-4xl font-bold text-blue-800">🤖 키오스크 장단점 글쓰기 도우미</h1>
+            <p class="text-gray-600 mt-2">AI 선생님과 함께 내 생각을 멋진 글로 완성해 봐요!</p>
+            <!-- Progress Stepper -->
+            <div class="mt-6 flex items-center justify-center gap-3 select-none">
+                <div id="stepper-1" class="flex items-center gap-2">
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-white bg-blue-600">1</div>
+                    <span class="text-sm text-blue-700 font-semibold hidden sm:inline">정보 입력</span>
+                </div>
+                <div class="h-px w-12 bg-blue-300"></div>
+                <div id="stepper-2" class="flex items-center gap-2 opacity-50">
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-white bg-yellow-500">2</div>
+                    <span class="text-sm text-yellow-700 font-semibold hidden sm:inline">AI 조언</span>
+                </div>
+                <div class="h-px w-12 bg-blue-300"></div>
+                <div id="stepper-3" class="flex items-center gap-2 opacity-50">
+                    <div class="w-8 h-8 rounded-full flex items-center justify-center font-bold text-white bg-green-600">3</div>
+                    <span class="text-sm text-green-700 font-semibold hidden sm:inline">최종 확인</span>
+                </div>
+            </div>
+        </header>
+
+        <main id="app" class="space-y-6">
+            <!-- Step 1: Info and Initial Draft -->
+            <section id="step1" class="bg-white p-6 md:p-8 rounded-2xl shadow-lg step-card visible-step">
+                <h2 class="text-2xl font-bold text-blue-700 mb-1">1단계: 내 정보와 생각 첫걸음</h2>
+                <p class="text-gray-500 mb-6">학교, 번호, 이름을 쓰고 키오스크에 대한 내 생각을 자유롭게 적어보세요.</p>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <input type="text" id="schoolName" placeholder="학교 이름" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition">
+                    <input type="text" id="classNumber" placeholder="번호 (예: 4학년 1반 1번)" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition">
+                    <input type="text" id="studentName" placeholder="학생 이름" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition">
+                </div>
+                <div class="relative">
+                    <textarea id="initialDraft" class="w-full p-4 border border-gray-300 rounded-lg h-64 resize-none focus:ring-2 focus:ring-blue-500 transition" placeholder="여기에 키오스크의 장점과 단점을 비교하고 내 의견을 써주세요. (최소 600자 이상)"></textarea>
+                    <div id="charCounter" class="absolute bottom-3 right-3 text-sm text-gray-500">0 / 600자</div>
+                </div>
+                <button id="submitForReview" class="mt-6 w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-transform transform hover:scale-105 shadow-md disabled:opacity-60 disabled:cursor-not-allowed">
+                    AI 선생님께 검토 받기
+                </button>
+            </section>
+
+            <!-- Step 2: AI Feedback and Revision -->
+            <section id="step2" class="bg-white p-6 md:p-8 rounded-2xl shadow-lg step-card hidden-step">
+                <h2 class="text-2xl font-bold text-yellow-600 mb-1">2단계: AI 선생님의 조언과 글 다듬기</h2>
+                <p class="text-gray-500 mb-6">AI 선생님의 조언을 참고해서 글을 더 멋지게 만들어 보세요!</p>
+
+                <div class="mb-6">
+                    <h3 class="text-lg font-bold text-gray-700 mb-2">✏️ 내가 처음 쓴 글</h3>
+                    <div id="displayInitialDraft" class="p-4 bg-gray-100 rounded-lg text-gray-800 whitespace-pre-wrap max-h-52 overflow-y-auto"></div>
+                </div>
+
+                <div class="mb-6">
+                    <h3 class="text-lg font-bold text-gray-700 mb-2">💡 AI 선생님의 조언</h3>
+                    <div id="aiFeedback" class="p-4 bg-yellow-100 border-l-4 border-yellow-400 rounded-lg text-yellow-800 whitespace-pre-wrap max-h-52 overflow-y-auto">
+                        <div id="loader" class="flex items-center justify-center space-x-2">
+                            <svg class="animate-spin h-5 w-5 text-yellow-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                            <span>AI 선생님이 글을 꼼꼼히 읽고 있어요. 잠시만 기다려주세요...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <h3 class="text-lg font-bold text-gray-700 mb-2">✍️ 조언을 보고 고쳐 쓴 글</h3>
+                    <textarea id="revisedDraft" class="w-full p-4 border border-gray-300 rounded-lg h-64 resize-none focus:ring-2 focus:ring-yellow-500 transition" placeholder="AI 선생님의 조언을 참고하여 글을 다듬어 보세요."></textarea>
+                </div>
+
+                <button id="submitFinal" class="mt-6 w-full bg-yellow-500 text-white font-bold py-3 px-6 rounded-lg hover:bg-yellow-600 transition-transform transform hover:scale-105 shadow-md disabled:opacity-60 disabled:cursor-not-allowed" disabled>
+                    글쓰기 완료!
+                </button>
+            </section>
+
+            <!-- Step 3: Final Review and Download -->
+            <section id="step3" class="bg-white p-6 md:p-8 rounded-2xl shadow-lg step-card hidden-step">
+                <div id="pdf-content">
+                    <h2 class="text-2xl font-bold text-green-700 mb-1">🎉 완성! 최종 결과 확인하기</h2>
+                    <p class="text-gray-500 mb-6">정말 잘했어요! 아래에서 최종 결과를 확인하고 PDF로 저장해서 제출하세요.</p>
+                    <div class="bg-gray-100 p-4 rounded-lg mb-4 text-center">
+                        <span id="finalSchool" class="font-bold"></span> | <span id="finalNumber" class="font-bold"></span> | <span id="finalName" class="font-bold"></span>
+                    </div>
+
+                    <div class="space-y-6">
+                        <div>
+                            <h3 class="text-lg font-bold text-blue-600 mb-2 border-b-2 border-blue-200 pb-1">✏️ 처음 쓴 글</h3>
+                            <div id="finalInitialDraft" class="p-3 bg-blue-50 rounded-md text-gray-800 whitespace-pre-wrap max-h-64 overflow-y-auto"></div>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-bold text-yellow-600 mb-2 border-b-2 border-yellow-200 pb-1">💡 AI 선생님의 조언</h3>
+                            <div id="finalAiFeedback" class="p-3 bg-yellow-50 rounded-md text-gray-800 whitespace-pre-wrap max-h-64 overflow-y-auto"></div>
+                        </div>
+                        <div>
+                            <h3 class="text-lg font-bold text-green-600 mb-2 border-b-2 border-green-200 pb-1">✍️ 고쳐 쓴 글</h3>
+                            <div id="finalRevisedDraft" class="p-3 bg-green-50 rounded-md text-gray-800 whitespace-pre-wrap max-h-64 overflow-y-auto"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button id="downloadPdf" class="w-full bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition-transform transform hover:scale-105 shadow-md">
+                        PDF로 저장 (임베디드 폰트)
+                    </button>
+                    <button id="printPdf" class="w-full bg-white text-green-700 font-bold py-3 px-6 rounded-lg border border-green-300 hover:bg-green-50 transition-transform transform hover:scale-105 shadow-md">
+                        인쇄/내보내기 (시스템 PDF)
+                    </button>
+                </div>
+            </section>
+        </main>
+        
+        <!-- Custom Alert Modal -->
+        <div id="alertModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+            <div class="bg-white p-8 rounded-2xl shadow-2xl text-center max-w-sm mx-4">
+                <div id="alertIcon" class="text-5xl mb-4"></div>
+                <p id="alertMessage" class="text-lg text-gray-700 mb-6"></p>
+                <button id="closeModal" class="bg-red-500 text-white font-bold py-2 px-8 rounded-lg hover:bg-red-600 transition">확인</button>
+            </div>
+        </div>
+
+    </div>
+
+<script>
+    // --- DOM Elements ---
+    const step1 = document.getElementById('step1');
+    const step2 = document.getElementById('step2');
+    const step3 = document.getElementById('step3');
+
+    const schoolNameInput = document.getElementById('schoolName');
+    const classNumberInput = document.getElementById('classNumber');
+    const studentNameInput = document.getElementById('studentName');
+    const initialDraftTextarea = document.getElementById('initialDraft');
+    const charCounter = document.getElementById('charCounter');
+    
+    const submitForReviewBtn = document.getElementById('submitForReview');
+    
+    const displayInitialDraftDiv = document.getElementById('displayInitialDraft');
+    const aiFeedbackDiv = document.getElementById('aiFeedback');
+    const loader = document.getElementById('loader');
+    const revisedDraftTextarea = document.getElementById('revisedDraft');
+    const submitFinalBtn = document.getElementById('submitFinal');
+
+    const pdfContentDiv = document.getElementById('pdf-content');
+    const finalSchoolSpan = document.getElementById('finalSchool');
+    const finalNumberSpan = document.getElementById('finalNumber');
+    const finalNameSpan = document.getElementById('finalName');
+    const finalInitialDraftDiv = document.getElementById('finalInitialDraft');
+    const finalAiFeedbackDiv = document.getElementById('finalAiFeedback');
+    const finalRevisedDraftDiv = document.getElementById('finalRevisedDraft');
+    const downloadPdfBtn = document.getElementById('downloadPdf');
+    const printPdfBtn = document.getElementById('printPdf');
+    
+    const alertModal = document.getElementById('alertModal');
+    const alertIcon = document.getElementById('alertIcon');
+    const alertMessage = document.getElementById('alertMessage');
+    const closeModalBtn = document.getElementById('closeModal');
+
+
+    // --- App State ---
+    let studentData = {
+        school: '',
+        number: '',
+        name: '',
+        initialDraft: '',
+        aiFeedback: '',
+        revisedDraft: ''
+    };
+    const MIN_CHARS = 600;
+    let aiReviewReceived = false;
+    let isLoadingAI = false;
+    let isKoreanFontReady = false;
+
+    // --- Functions ---
+    
+    function customAlert(message, icon = '⚠️') {
+        alertMessage.textContent = message;
+        alertIcon.textContent = icon;
+        alertModal.classList.remove('hidden');
+    }
+
+    function updateStepper(activeIndex) {
+        const steps = [
+            document.getElementById('stepper-1'),
+            document.getElementById('stepper-2'),
+            document.getElementById('stepper-3')
+        ];
+        steps.forEach((el, idx) => {
+            if (idx < activeIndex) {
+                el.classList.remove('opacity-50');
+            } else if (idx === activeIndex) {
+                el.classList.remove('opacity-50');
+            } else {
+                el.classList.add('opacity-50');
+            }
+        });
+    }
+
+    function changeStep(hide, show, activeIndex) {
+        hide.classList.remove('visible-step');
+        hide.classList.add('hidden-step');
+        setTimeout(() => {
+            show.classList.remove('hidden-step');
+            show.classList.add('visible-step');
+            window.scrollTo(0, 0);
+            updateStepper(activeIndex);
+        }, 300);
+    }
+    
+    async function getAIReview(text) {
+        loader.style.display = 'flex';
+        aiFeedbackDiv.textContent = '';
+        aiFeedbackDiv.appendChild(loader);
+        isLoadingAI = true;
+        submitForReviewBtn.disabled = true;
+
+        try {
+            const response = await fetch('/api/review', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ text })
+            });
+
+            if (!response.ok) {
+                throw new Error(`API 요청 실패: ${response.status}`);
+            }
+
+            const result = await response.json();
+            if (result && result.feedback) {
+                aiReviewReceived = true;
+                return result.feedback;
+            }
+            return "죄송해요, AI 선생님이 지금 조금 바쁜가 봐요. 잠시 후에 다시 시도해주세요.";
+        } catch (error) {
+            console.error('AI Review Error:', error);
+            return "오류가 발생했어요. 인터넷 연결을 확인하고 다시 시도해주세요.";
+        } finally {
+            isLoadingAI = false;
+            submitForReviewBtn.disabled = false;
+        }
+    }
+
+    async function ensureKoreanFont(pdf) {
+        if (isKoreanFontReady) return;
+        try {
+            // NanumGothic Regular TTF (Korean) - public CDN
+            const fontUrl = 'https://cdn.jsdelivr.net/gh/fonts-archive/NanumGothic/NanumGothic-Regular.ttf';
+            const res = await fetch(fontUrl);
+            const buf = await res.arrayBuffer();
+            const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+            pdf.addFileToVFS('NanumGothic-Regular.ttf', base64);
+            pdf.addFont('NanumGothic-Regular.ttf', 'NanumGothic', 'normal');
+            isKoreanFontReady = true;
+        } catch (e) {
+            console.error('폰트 로드 실패, 기본 폰트로 대체합니다.', e);
+        }
+    }
+
+    async function generatePdf() {
+        const button = downloadPdfBtn;
+        button.textContent = "PDF 생성 중...";
+        button.disabled = true;
+
+        try {
+            const { jsPDF } = window.jspdf;
+            const pdf = new jsPDF({
+                orientation: 'p',
+                unit: 'mm',
+                format: 'a4'
+            });
+
+            // --- Font Setting (임베디드 한글 폰트) ---
+            await ensureKoreanFont(pdf);
+            pdf.setFont(isKoreanFontReady ? 'NanumGothic' : 'Helvetica', 'normal');
+
+            const FONT_SIZES = {
+                title: 16,
+                header: 11,
+                subtitle: 13,
+                body: 10
+            };
+            const LINE_HEIGHT = 7;
+            const MARGIN = 15;
+            const PAGE_WIDTH = pdf.internal.pageSize.getWidth();
+            const MAX_WIDTH = PAGE_WIDTH - (MARGIN * 2);
+            let y = MARGIN; 
+
+            const addTextWithWrap = (text, options) => {
+                const { size, isTitle = false, isSubtitle = false } = options;
+                pdf.setFontSize(size);
+                
+                if (isTitle) pdf.setTextColor(40, 58, 112);
+                else if (isSubtitle) pdf.setTextColor(29, 78, 216);
+                else pdf.setTextColor(51, 65, 85);
+                
+                const lines = pdf.splitTextToSize(text, MAX_WIDTH);
+                
+                if (y + (lines.length * (LINE_HEIGHT - 1)) > pdf.internal.pageSize.getHeight() - MARGIN) {
+                    pdf.addPage();
+                    y = MARGIN;
+                }
+                
+                pdf.text(lines, MARGIN, y);
+                y += (lines.length * (LINE_HEIGHT - 1)); 
+                y += 6; 
+            };
+            
+            addTextWithWrap('키오스크 장단점 글쓰기 결과', { size: FONT_SIZES.title, isTitle: true });
+            y += 3;
+
+            const studentInfo = `학교: ${studentData.school} | 번호: ${studentData.number} | 이름: ${studentData.name}`;
+            addTextWithWrap(studentInfo, { size: FONT_SIZES.header });
+            y += 8;
+            
+            addTextWithWrap('✏️ 처음 쓴 글', { size: FONT_SIZES.subtitle, isSubtitle: true });
+            addTextWithWrap(studentData.initialDraft, { size: FONT_SIZES.body });
+            
+            addTextWithWrap('💡 AI 선생님의 조언', { size: FONT_SIZES.subtitle, isSubtitle: true });
+            addTextWithWrap(studentData.aiFeedback, { size: FONT_SIZES.body });
+
+            addTextWithWrap('✍️ 고쳐 쓴 글', { size: FONT_SIZES.subtitle, isSubtitle: true });
+            addTextWithWrap(studentData.revisedDraft, { size: FONT_SIZES.body });
+
+            const fileName = `${studentData.school}_${studentData.number}_${studentData.name}_키오스크글쓰기.pdf`;
+            pdf.save(fileName);
+
+        } catch (error) {
+            console.error("PDF 생성 오류:", error);
+            customAlert("PDF를 만드는 중 오류가 발생했어요. 다시 시도해주세요.", "❌");
+        } finally {
+            button.textContent = "PDF로 저장 (임베디드 폰트)";
+            button.disabled = false;
+        }
+    }
+
+
+    // --- Event Listeners ---
+    initialDraftTextarea.addEventListener('input', () => {
+        const textLength = initialDraftTextarea.value.length;
+        charCounter.textContent = `${textLength} / ${MIN_CHARS}자`;
+        if (textLength >= MIN_CHARS) {
+            charCounter.style.color = 'green';
+        } else {
+            charCounter.style.color = 'gray';
+        }
+    });
+
+    submitForReviewBtn.addEventListener('click', async () => {
+        const school = schoolNameInput.value.trim();
+        const number = classNumberInput.value.trim();
+        const name = studentNameInput.value.trim();
+        const draft = initialDraftTextarea.value.trim();
+
+        if (!school || !number || !name) {
+            customAlert('학교, 번호, 이름을 모두 입력해주세요!', '📝');
+            return;
+        }
+        if (draft.length < MIN_CHARS) {
+            customAlert(`글을 조금 더 길게 써주세요. 최소 ${MIN_CHARS}자 이상이어야 해요!`, '✍️');
+            return;
+        }
+
+        studentData = { ...studentData, school, number, name, initialDraft: draft };
+        aiReviewReceived = false;
+
+        changeStep(step1, step2, 1);
+        
+        displayInitialDraftDiv.textContent = studentData.initialDraft;
+        revisedDraftTextarea.value = studentData.initialDraft;
+        
+        const feedback = await getAIReview(studentData.initialDraft);
+        studentData.aiFeedback = feedback;
+        
+        loader.style.display = 'none';
+        aiFeedbackDiv.textContent = studentData.aiFeedback;
+
+        // 게이트: AI 검토를 받아야 2단계 완료 가능
+        if (aiReviewReceived && studentData.aiFeedback && !studentData.aiFeedback.includes('오류가 발생')) {
+            submitFinalBtn.disabled = false;
+        } else {
+            submitFinalBtn.disabled = true;
+        }
+    });
+
+    submitFinalBtn.addEventListener('click', () => {
+        if (!aiReviewReceived) {
+            customAlert('AI 선생님의 검토를 먼저 받아야 해요!', '🤖');
+            return;
+        }
+        studentData.revisedDraft = revisedDraftTextarea.value.trim();
+
+        if(studentData.revisedDraft.length < MIN_CHARS) {
+            customAlert(`고쳐 쓴 글도 ${MIN_CHARS}자 이상이어야 해요!`, '✍️');
+            return;
+        }
+        
+        // Populate final view
+        finalSchoolSpan.textContent = studentData.school;
+        finalNumberSpan.textContent = studentData.number;
+        finalNameSpan.textContent = studentData.name;
+        finalInitialDraftDiv.textContent = studentData.initialDraft;
+        finalAiFeedbackDiv.textContent = studentData.aiFeedback;
+        finalRevisedDraftDiv.textContent = studentData.revisedDraft;
+
+        changeStep(step2, step3, 2);
+    });
+
+    downloadPdfBtn.addEventListener('click', generatePdf);
+    printPdfBtn.addEventListener('click', () => window.print());
+    
+    closeModalBtn.addEventListener('click', () => {
+        alertModal.classList.add('hidden');
+    });
+
+</script>
+</body>
+</html>
+
