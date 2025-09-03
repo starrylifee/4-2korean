@@ -233,6 +233,17 @@
         alertModal.classList.remove('hidden');
     }
 
+    function arrayBufferToBase64(buffer) {
+        const bytes = new Uint8Array(buffer);
+        const chunkSize = 0x8000;
+        let binary = '';
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+            const chunk = bytes.subarray(i, i + chunkSize);
+            binary += String.fromCharCode.apply(null, chunk);
+        }
+        return btoa(binary);
+    }
+
     function updateStepper(activeIndex) {
         const steps = [
             document.getElementById('stepper-1'),
@@ -296,29 +307,29 @@
 
     async function ensureKoreanFont(pdf) {
         if (isKoreanFontReady) return true;
-        const candidates = [
-            'fonts/NotoSansKR-Regular.ttf',
-            './fonts/NotoSansKR-Regular.ttf',
-            '/fonts/NotoSansKR-Regular.ttf'
-        ];
-        for (const url of candidates) {
-            try {
-                const res = await fetch(url, { cache: 'no-store' });
-                if (!res.ok) {
-                    console.warn('폰트 응답 상태 비정상:', url, res.status);
-                    continue;
-                }
-                const buf = await res.arrayBuffer();
-                const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-                pdf.addFileToVFS('KR-Regular.ttf', base64);
-                pdf.addFont('KR-Regular.ttf', 'KRFont', 'normal');
-                isKoreanFontReady = true;
-                return true;
-            } catch (e) {
-                console.warn('폰트 로드 실패:', url, e?.message || e);
+        try {
+            const ts = Date.now();
+            const url = `/fonts/NotoSansKR-Regular.ttf?t=${ts}`;
+            const res = await fetch(url, { cache: 'no-store' });
+            if (!(res.status === 200 || res.ok)) {
+                console.warn('TTF 응답 비정상:', res.status);
+                return false;
             }
+            const buf = await res.arrayBuffer();
+            if (!buf || buf.byteLength < 1024) {
+                console.warn('TTF 크기 비정상:', buf && buf.byteLength);
+                return false;
+            }
+            const base64 = arrayBufferToBase64(buf);
+            pdf.addFileToVFS('KR-Regular.ttf', base64);
+            pdf.addFont('KR-Regular.ttf', 'KRFont', 'normal');
+            isKoreanFontReady = true;
+            console.info('임베디드 폰트 사용:', url);
+            return true;
+        } catch (e) {
+            console.warn('폰트 로드 실패:', e);
+            return false;
         }
-        return false;
     }
 
     async function generatePdf() {
@@ -337,7 +348,7 @@
             // --- Font Setting (임베디드 한글 폰트) ---
             const fontOk = await ensureKoreanFont(pdf);
             if (!fontOk) {
-                customAlert('임베디드 한글 폰트를 불러오지 못했어요. 인쇄/내보내기 버튼을 사용해주세요.', '🖨️');
+                customAlert('한글 폰트를 불러오지 못했어요. 인쇄(CTRL+P)로 내보내기를 이용하세요.', '🖨️');
                 return;
             }
             pdf.setFont('KRFont', 'normal');
