@@ -12,6 +12,7 @@
     <script src="https://cdn.jsdelivr.net/gh/yan-s/Leflet.Korean-master/dist/L.Korean-src.js"></script>
     <script type="text/javascript" src="https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2107@1.1/Pretendard-Regular.woff"></script>
     <link rel="icon" href="data:," />
+    <link rel="preload" as="font" href="/fonts/NotoSansKR-Regular.ttf" type="font/ttf" crossorigin>
     <style>
         body {
             font-family: 'Noto Sans KR', sans-serif;
@@ -296,15 +297,17 @@
     async function ensureKoreanFont(pdf) {
         if (isKoreanFontReady) return true;
         const candidates = [
-            '/fonts/NotoSansKR-Regular.ttf',
-            'https://cdn.jsdelivr.net/npm/@jslib-korean-fonts/notosans-kr@1.1.0/fonts/NotoSansKR-Regular.ttf',
-            'https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2001@1.2/NanumGothic.ttf',
-            'https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2107@1.1/NanumGothic.ttf'
+            'fonts/NotoSansKR-Regular.ttf',
+            './fonts/NotoSansKR-Regular.ttf',
+            '/fonts/NotoSansKR-Regular.ttf'
         ];
         for (const url of candidates) {
             try {
                 const res = await fetch(url, { cache: 'no-store' });
-                if (!res.ok) continue;
+                if (!res.ok) {
+                    console.warn('폰트 응답 상태 비정상:', url, res.status);
+                    continue;
+                }
                 const buf = await res.arrayBuffer();
                 const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
                 pdf.addFileToVFS('KR-Regular.ttf', base64);
@@ -312,7 +315,7 @@
                 isKoreanFontReady = true;
                 return true;
             } catch (e) {
-                console.warn('폰트 후보 로드 실패:', url);
+                console.warn('폰트 로드 실패:', url, e?.message || e);
             }
         }
         return false;
@@ -394,7 +397,7 @@
             console.error("PDF 생성 오류:", error);
             customAlert("PDF를 만드는 중 오류가 발생했어요. 다시 시도해주세요.", "❌");
         } finally {
-            button.textContent = "PDF로 저장 (임베디드 폰트)";
+            button.textContent = "PDF로 저장";
             button.disabled = false;
         }
     }
