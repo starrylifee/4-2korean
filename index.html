@@ -86,8 +86,19 @@
                     <input type="text" id="classNumber" placeholder="번호 (예: 4학년 1반 1번)" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition">
                     <input type="text" id="studentName" placeholder="학생 이름" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 transition">
                 </div>
+                <div class="mb-3 flex items-center gap-3">
+                    <label for="minCharsSelect" class="text-sm text-gray-600 font-semibold">최소 글자 수:</label>
+                    <select id="minCharsSelect" class="p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="200">200자</option>
+                        <option value="300">300자</option>
+                        <option value="400">400자</option>
+                        <option value="500">500자</option>
+                        <option value="600" selected>600자</option>
+                    </select>
+                    <span class="text-xs text-gray-500">(학습 수준에 맞게 선택하세요)</span>
+                </div>
                 <div class="relative">
-                    <textarea id="initialDraft" class="w-full p-4 border border-gray-300 rounded-lg h-64 resize-none focus:ring-2 focus:ring-blue-500 transition" placeholder="여기에 키오스크의 장점과 단점을 비교하고 내 의견을 써주세요. (최소 600자 이상)"></textarea>
+                    <textarea id="initialDraft" class="w-full p-4 border border-gray-300 rounded-lg h-64 resize-none focus:ring-2 focus:ring-blue-500 transition" placeholder="여기에 키오스크의 장점과 단점을 비교하고 내 의견을 써주세요. (아래에서 최소 글자 수를 선택하세요)"></textarea>
                     <div id="charCounter" class="absolute bottom-3 right-3 text-sm text-gray-500">0 / 600자</div>
                 </div>
                 <button id="submitForReview" class="mt-6 w-full bg-blue-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-blue-700 transition-transform transform hover:scale-105 shadow-md disabled:opacity-60 disabled:cursor-not-allowed">
@@ -184,6 +195,7 @@
     const schoolNameInput = document.getElementById('schoolName');
     const classNumberInput = document.getElementById('classNumber');
     const studentNameInput = document.getElementById('studentName');
+    const minCharsSelect = document.getElementById('minCharsSelect');
     const initialDraftTextarea = document.getElementById('initialDraft');
     const charCounter = document.getElementById('charCounter');
     
@@ -210,6 +222,10 @@
     const alertMessage = document.getElementById('alertMessage');
     const closeModalBtn = document.getElementById('closeModal');
 
+    // 입력칸에만 붙여넣기/드롭/우클릭 차단 적용
+    hardBlockPasteAndContext(initialDraftTextarea);
+    hardBlockPasteAndContext(revisedDraftTextarea);
+
 
     // --- App State ---
     let studentData = {
@@ -220,7 +236,7 @@
         aiFeedback: '',
         revisedDraft: ''
     };
-    const MIN_CHARS = 600;
+    let minChars = parseInt((minCharsSelect && minCharsSelect.value) ? minCharsSelect.value : '600', 10);
     let aiReviewReceived = false;
     let isLoadingAI = false;
     let isKoreanFontReady = false;
@@ -242,6 +258,43 @@
             binary += String.fromCharCode.apply(null, chunk);
         }
         return btoa(binary);
+    }
+
+    // --- 입력칸 전용 우클릭/붙여넣기/드래그-드롭 차단 유틸 ---
+    function hardBlockPasteAndContext(el, { showNotice = true } = {}) {
+        if (!el) return;
+        const notify = (msg) => {
+            if (!showNotice) return;
+            el.title = msg;
+        };
+
+        el.addEventListener('contextmenu', e => { e.preventDefault(); notify('우클릭/붙여넣기 비활성화'); });
+
+        el.addEventListener('paste', e => { e.preventDefault(); notify('붙여넣기 비활성화'); });
+        el.addEventListener('drop', e => { e.preventDefault(); notify('드롭 비활성화'); });
+        el.addEventListener('dragstart', e => e.preventDefault());
+        el.addEventListener('dragover', e => e.preventDefault());
+
+        el.addEventListener('beforeinput', e => {
+            const t = e.inputType;
+            if (t === 'insertFromPaste' || t === 'insertFromDrop' || t === 'insertFromPasteAsQuotation') {
+                e.preventDefault();
+                notify('붙여넣기/드롭 비활성화');
+            }
+        });
+
+        el.addEventListener('keydown', e => {
+            const key = e.key && e.key.toLowerCase();
+            const isMetaPaste = (e.ctrlKey || e.metaKey) && key === 'v';
+            const isShiftInsert = e.shiftKey && key === 'insert';
+            if (isMetaPaste || isShiftInsert) {
+                e.preventDefault();
+                notify('붙여넣기 비활성화');
+            }
+        });
+
+        // iOS 긴눌러 메뉴 억제에 일부 도움
+        el.style.webkitTouchCallout = 'none';
     }
 
     function updateStepper(activeIndex) {
@@ -270,6 +323,17 @@
             window.scrollTo(0, 0);
             updateStepper(activeIndex);
         }, 300);
+    }
+    
+    // 글자수 카운터 UI 업데이트
+    function updateCounterUI() {
+        const textLength = initialDraftTextarea.value.length;
+        charCounter.textContent = `${textLength} / ${minChars}자`;
+        if (textLength >= minChars) {
+            charCounter.style.color = 'green';
+        } else {
+            charCounter.style.color = 'gray';
+        }
     }
     
     async function getAIReview(text) {
@@ -415,15 +479,15 @@
 
 
     // --- Event Listeners ---
-    initialDraftTextarea.addEventListener('input', () => {
-        const textLength = initialDraftTextarea.value.length;
-        charCounter.textContent = `${textLength} / ${MIN_CHARS}자`;
-        if (textLength >= MIN_CHARS) {
-            charCounter.style.color = 'green';
-        } else {
-            charCounter.style.color = 'gray';
-        }
-    });
+    initialDraftTextarea.addEventListener('input', updateCounterUI);
+    if (minCharsSelect) {
+        minCharsSelect.addEventListener('change', () => {
+            minChars = parseInt(minCharsSelect.value, 10);
+            updateCounterUI();
+        });
+    }
+    // 초기 표시 업데이트
+    updateCounterUI();
 
     submitForReviewBtn.addEventListener('click', async () => {
         const school = schoolNameInput.value.trim();
@@ -435,12 +499,14 @@
             customAlert('학교, 번호, 이름을 모두 입력해주세요!', '📝');
             return;
         }
-        if (draft.length < MIN_CHARS) {
-            customAlert(`글을 조금 더 길게 써주세요. 최소 ${MIN_CHARS}자 이상이어야 해요!`, '✍️');
+        if (draft.length < minChars) {
+            customAlert(`글을 조금 더 길게 써주세요. 최소 ${minChars}자 이상이어야 해요!`, '✍️');
             return;
         }
 
         studentData = { ...studentData, school, number, name, initialDraft: draft };
+        // 선택한 최소 글자 수를 기록(최종 제출 검증에도 동일 기준 적용)
+        studentData.minChars = minChars;
         aiReviewReceived = false;
 
         changeStep(step1, step2, 1);
@@ -469,8 +535,9 @@
         }
         studentData.revisedDraft = revisedDraftTextarea.value.trim();
 
-        if(studentData.revisedDraft.length < MIN_CHARS) {
-            customAlert(`고쳐 쓴 글도 ${MIN_CHARS}자 이상이어야 해요!`, '✍️');
+        const required = studentData.minChars || minChars;
+        if (studentData.revisedDraft.length < required) {
+            customAlert(`고쳐 쓴 글도 ${required}자 이상이어야 해요!`, '✍️');
             return;
         }
         
