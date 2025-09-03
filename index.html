@@ -11,6 +11,7 @@
     <script src="https://unpkg.com/jspdf-autotable@3.5.13/dist/jspdf.plugin.autotable.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/yan-s/Leflet.Korean-master/dist/L.Korean-src.js"></script>
     <script type="text/javascript" src="https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2107@1.1/Pretendard-Regular.woff"></script>
+    <link rel="icon" href="data:," />
     <style>
         body {
             font-family: 'Noto Sans KR', sans-serif;
@@ -37,6 +38,16 @@
             #step1, #step2 { display: none !important; }
             #step3 { display: block !important; opacity: 1 !important; transform: none !important; max-height: none !important; }
             #pdf-content { box-shadow: none !important; background: white !important; }
+            /* 스크롤 제거 및 전체 내용 출력 */
+            #finalInitialDraft,
+            #finalAiFeedback,
+            #finalRevisedDraft,
+            #displayInitialDraft,
+            #aiFeedback {
+                max-height: none !important;
+                overflow: visible !important;
+                height: auto !important;
+            }
         }
     </style>
 </head>
@@ -143,10 +154,10 @@
 
                 <div class="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <button id="downloadPdf" class="w-full bg-green-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-green-700 transition-transform transform hover:scale-105 shadow-md">
-                        PDF로 저장 (임베디드 폰트)
+                        PDF로 저장
                     </button>
                     <button id="printPdf" class="w-full bg-white text-green-700 font-bold py-3 px-6 rounded-lg border border-green-300 hover:bg-green-50 transition-transform transform hover:scale-105 shadow-md">
-                        인쇄/내보내기 (시스템 PDF)
+                        인쇄
                     </button>
                 </div>
             </section>
@@ -283,19 +294,28 @@
     }
 
     async function ensureKoreanFont(pdf) {
-        if (isKoreanFontReady) return;
-        try {
-            // NanumGothic Regular TTF (Korean) - public CDN
-            const fontUrl = 'https://cdn.jsdelivr.net/gh/fonts-archive/NanumGothic/NanumGothic-Regular.ttf';
-            const res = await fetch(fontUrl);
-            const buf = await res.arrayBuffer();
-            const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
-            pdf.addFileToVFS('NanumGothic-Regular.ttf', base64);
-            pdf.addFont('NanumGothic-Regular.ttf', 'NanumGothic', 'normal');
-            isKoreanFontReady = true;
-        } catch (e) {
-            console.error('폰트 로드 실패, 기본 폰트로 대체합니다.', e);
+        if (isKoreanFontReady) return true;
+        const candidates = [
+            '/fonts/NotoSansKR-Regular.ttf',
+            'https://cdn.jsdelivr.net/npm/@jslib-korean-fonts/notosans-kr@1.1.0/fonts/NotoSansKR-Regular.ttf',
+            'https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2001@1.2/NanumGothic.ttf',
+            'https://cdn.jsdelivr.net/gh/projectnoonnu/noonfonts_2107@1.1/NanumGothic.ttf'
+        ];
+        for (const url of candidates) {
+            try {
+                const res = await fetch(url, { cache: 'no-store' });
+                if (!res.ok) continue;
+                const buf = await res.arrayBuffer();
+                const base64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+                pdf.addFileToVFS('KR-Regular.ttf', base64);
+                pdf.addFont('KR-Regular.ttf', 'KRFont', 'normal');
+                isKoreanFontReady = true;
+                return true;
+            } catch (e) {
+                console.warn('폰트 후보 로드 실패:', url);
+            }
         }
+        return false;
     }
 
     async function generatePdf() {
@@ -312,8 +332,12 @@
             });
 
             // --- Font Setting (임베디드 한글 폰트) ---
-            await ensureKoreanFont(pdf);
-            pdf.setFont(isKoreanFontReady ? 'NanumGothic' : 'Helvetica', 'normal');
+            const fontOk = await ensureKoreanFont(pdf);
+            if (!fontOk) {
+                customAlert('임베디드 한글 폰트를 불러오지 못했어요. 인쇄/내보내기 버튼을 사용해주세요.', '🖨️');
+                return;
+            }
+            pdf.setFont('KRFont', 'normal');
 
             const FONT_SIZES = {
                 title: 16,
