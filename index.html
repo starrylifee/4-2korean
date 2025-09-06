@@ -75,6 +75,9 @@
                 </div>
             </div>
         </header>
+        <div class="mt-2 text-right">
+            <button id="clearSaved" class="text-xs text-gray-500 underline hover:text-red-600">임시저장 삭제</button>
+        </div>
 
         <main id="app" class="space-y-6">
             <!-- Step 1: Info and Initial Draft -->
@@ -221,6 +224,7 @@
     const alertIcon = document.getElementById('alertIcon');
     const alertMessage = document.getElementById('alertMessage');
     const closeModalBtn = document.getElementById('closeModal');
+    const clearSavedBtn = document.getElementById('clearSaved');
 
     // 입력칸에만 붙여넣기/드롭/우클릭 차단 적용
     hardBlockPasteAndContext(initialDraftTextarea);
@@ -228,6 +232,7 @@
 
 
     // --- App State ---
+    const STORAGE_KEY = 'kiosk-writing-autosave-v1';
     let studentData = {
         school: '',
         number: '',
@@ -240,6 +245,7 @@
     let aiReviewReceived = false;
     let isLoadingAI = false;
     let isKoreanFontReady = false;
+    let currentStepIndex = 0; // 0: step1, 1: step2, 2: step3
 
     // --- Functions ---
     
@@ -322,6 +328,8 @@
             show.classList.add('visible-step');
             window.scrollTo(0, 0);
             updateStepper(activeIndex);
+            currentStepIndex = activeIndex;
+            saveToStorage();
         }, 300);
     }
     
@@ -417,6 +425,29 @@
             }
             pdf.setFont('KRFont', 'normal');
 
+            // PDF 임베디드 폰트가 지원하지 않는 이모지/특수문자/비표준 공백 정리
+            const sanitizeForPdf = (text) => {
+                if (!text) return '';
+                let t = String(text);
+                // Variation Selector, Zero-Width Space 제거
+                t = t.replace(/\uFE0F/g, '');
+                t = t.replace(/\u200B/g, '');
+                // NBSP → 일반 공백
+                t = t.replace(/\u00A0/g, ' ');
+                // 스마트 따옴표 → 일반 따옴표
+                t = t.replace(/[\u2018\u2019]/g, "'");
+                t = t.replace(/[\u201C\u201D]/g, '"');
+                // 대시류 → 하이픈
+                t = t.replace(/[\u2013\u2014]/g, '-');
+                // 글머리 기호 일부 → 하이픈
+                t = t.replace(/[\u2022\u2043]/g, '-');
+                // Dingbats/기호(✏️✍️ 등) 제거
+                t = t.replace(/[\u2700-\u27BF]/g, '');
+                // 대부분 이모지(서로게이트 페어) 제거
+                t = t.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, '');
+                return t;
+            };
+
             const FONT_SIZES = {
                 title: 16,
                 header: 11,
@@ -437,7 +468,7 @@
                 else if (isSubtitle) pdf.setTextColor(29, 78, 216);
                 else pdf.setTextColor(51, 65, 85);
                 
-                const lines = pdf.splitTextToSize(text, MAX_WIDTH);
+                const lines = pdf.splitTextToSize(sanitizeForPdf(text), MAX_WIDTH);
                 
                 if (y + (lines.length * (LINE_HEIGHT - 1)) > pdf.internal.pageSize.getHeight() - MARGIN) {
                     pdf.addPage();
@@ -479,15 +510,126 @@
 
 
     // --- Event Listeners ---
-    initialDraftTextarea.addEventListener('input', updateCounterUI);
+    initialDraftTextarea.addEventListener('input', () => { updateCounterUI(); saveToStorage(); });
     if (minCharsSelect) {
         minCharsSelect.addEventListener('change', () => {
             minChars = parseInt(minCharsSelect.value, 10);
             updateCounterUI();
+            saveToStorage();
         });
     }
+    schoolNameInput.addEventListener('input', () => { saveToStorage(); });
+    classNumberInput.addEventListener('input', () => { saveToStorage(); });
+    studentNameInput.addEventListener('input', () => { saveToStorage(); });
+    revisedDraftTextarea.addEventListener('input', () => { saveToStorage(); });
     // 초기 표시 업데이트
     updateCounterUI();
+
+    // --- Autosave / Restore ---
+    function safeGetStorage() {
+        try { return localStorage; } catch (e) { return null; }
+    }
+
+    function buildStateForSave() {
+        return {
+            school: (schoolNameInput && schoolNameInput.value) || '',
+            number: (classNumberInput && classNumberInput.value) || '',
+            name: (studentNameInput && studentNameInput.value) || '',
+            initialDraft: (initialDraftTextarea && initialDraftTextarea.value) || '',
+            aiFeedback: studentData.aiFeedback || '',
+            revisedDraft: (revisedDraftTextarea && revisedDraftTextarea.value) || '',
+            minChars: minChars,
+            aiReviewReceived: !!aiReviewReceived,
+            currentStep: currentStepIndex,
+            ts: Date.now()
+        };
+    }
+
+    function saveToStorage() {
+        const store = safeGetStorage();
+        if (!store) return;
+        try {
+            const data = buildStateForSave();
+            store.setItem(STORAGE_KEY, JSON.stringify(data));
+        } catch (e) {
+            // ignore quota/json errors
+        }
+    }
+
+    function loadFromStorage() {
+        const store = safeGetStorage();
+        if (!store) return null;
+        try {
+            const raw = store.getItem(STORAGE_KEY);
+            if (!raw) return null;
+            return JSON.parse(raw);
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function tryRestoreFromStorage() {
+        const saved = loadFromStorage();
+        if (!saved) return;
+        const hasContent = (saved.initialDraft && saved.initialDraft.length > 0) || (saved.revisedDraft && saved.revisedDraft.length > 0);
+        if (!hasContent && !saved.school && !saved.name) return;
+
+        const ok = window.confirm('이전에 작성하던 내용이 있습니다. 불러올까요?');
+        if (!ok) return;
+
+        // Restore fields
+        if (saved.school) schoolNameInput.value = saved.school;
+        if (saved.number) classNumberInput.value = saved.number;
+        if (saved.name) studentNameInput.value = saved.name;
+        if (saved.minChars && minCharsSelect) {
+            minCharsSelect.value = String(saved.minChars);
+            minChars = parseInt(minCharsSelect.value, 10);
+        }
+        if (typeof saved.initialDraft === 'string') initialDraftTextarea.value = saved.initialDraft;
+        if (typeof saved.revisedDraft === 'string') revisedDraftTextarea.value = saved.revisedDraft || saved.initialDraft || '';
+        updateCounterUI();
+
+        // Restore AI feedback state
+        studentData.aiFeedback = saved.aiFeedback || '';
+        aiReviewReceived = !!saved.aiReviewReceived && !!studentData.aiFeedback && !studentData.aiFeedback.includes('오류가 발생');
+        loader.style.display = 'none';
+        if (studentData.aiFeedback) {
+            aiFeedbackDiv.textContent = studentData.aiFeedback;
+        }
+
+        // Reflect stepper and sections
+        const targetStep = Math.max(0, Math.min(2, Number(saved.currentStep || 0)));
+        if (targetStep >= 1) {
+            // Prepare step2 content
+            displayInitialDraftDiv.textContent = initialDraftTextarea.value;
+            if (!revisedDraftTextarea.value) revisedDraftTextarea.value = initialDraftTextarea.value;
+            submitFinalBtn.disabled = !aiReviewReceived;
+            changeStep(step1, step2, 1);
+            if (targetStep === 2) {
+                // Populate final view and move to step3
+                finalSchoolSpan.textContent = schoolNameInput.value;
+                finalNumberSpan.textContent = classNumberInput.value;
+                finalNameSpan.textContent = studentNameInput.value;
+                finalInitialDraftDiv.textContent = initialDraftTextarea.value;
+                finalAiFeedbackDiv.textContent = studentData.aiFeedback || '';
+                finalRevisedDraftDiv.textContent = revisedDraftTextarea.value;
+                setTimeout(() => changeStep(step2, step3, 2), 350);
+            }
+        }
+        saveToStorage();
+    }
+
+    tryRestoreFromStorage();
+    window.addEventListener('beforeunload', () => { saveToStorage(); });
+
+    if (clearSavedBtn) {
+        clearSavedBtn.addEventListener('click', () => {
+            const store = safeGetStorage();
+            if (!store) return;
+            store.removeItem(STORAGE_KEY);
+            customAlert('임시저장 데이터를 삭제했어요.', '🗑️');
+        });
+    }
 
     submitForReviewBtn.addEventListener('click', async () => {
         const school = schoolNameInput.value.trim();
@@ -526,6 +668,7 @@
         } else {
             submitFinalBtn.disabled = true;
         }
+        saveToStorage();
     });
 
     submitFinalBtn.addEventListener('click', () => {
@@ -550,6 +693,7 @@
         finalRevisedDraftDiv.textContent = studentData.revisedDraft;
 
         changeStep(step2, step3, 2);
+        saveToStorage();
     });
 
     downloadPdfBtn.addEventListener('click', generatePdf);
